@@ -60,8 +60,10 @@ spec:
                 secretKeyRef:
                   name: guac-tunnel-secret
                   key: TUNNEL_SECRET
+            # Délai pour ouvrir le WebSocket (l'app le fait en moins d'une seconde) ;
+            # court pour limiter le rejeu d'un jeton intercepté
             - name: TUNNEL_TOKEN_TTL_SECONDS
-              value: "120"
+              value: "30"
             # Authentification : JWT HS256 des utilisateurs + jetons de destruction.
             # Secret créé hors dépôt :
             #   kubectl -n guacamole-system create secret generic orchestrator-auth \

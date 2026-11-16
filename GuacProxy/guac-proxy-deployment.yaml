@@ -97,6 +97,9 @@ metadata:
 spec:
   # Durée maximale d'un WebSocket derrière le load balancer (= durée max d'une session)
   timeoutSec: 3600
+  # Pas de logs de requêtes : l'URL du WebSocket contient le jeton de tunnel
+  logging:
+    enable: false
   connectionDraining:
     drainingTimeoutSec: 60
   healthCheck:

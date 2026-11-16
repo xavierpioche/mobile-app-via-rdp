@@ -7,7 +7,7 @@ if (!/^[0-9a-f]{64}$/i.test(SECRET_HEX)) {
 }
 const KEY = Buffer.from(SECRET_HEX, 'hex');
 // Délai pour ouvrir le WebSocket ; une connexion établie n'est pas coupée à l'expiration.
-const TUNNEL_TOKEN_TTL = Number(process.env.TUNNEL_TOKEN_TTL_SECONDS) || 120;
+const TUNNEL_TOKEN_TTL = Number(process.env.TUNNEL_TOKEN_TTL_SECONDS) || 30;
 
 const b64url = (buf) => buf.toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 
