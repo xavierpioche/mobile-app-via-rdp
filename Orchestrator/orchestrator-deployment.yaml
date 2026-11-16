@@ -51,12 +51,27 @@ spec:
             - containerPort: 3000
           env:
             - name: GUAC_URL
-              value: "http://cluster.local"
+              value: "http://guacamole-service.guacamole-system:8080/guacamole"
+            - name: ALLOWED_ORIGINS
+              value: "capacitor://localhost,https://localhost,http://localhost"
             - name: JSON_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: guacamole-secrets
-                  key: json-secret-key
+                  # Même secret que Guacamole (Guacamole/guacamole-deployment.yaml)
+                  name: guacamole-json-secret
+                  key: JSON_SECRET_KEY
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20
           resources:
             requests:
               cpu: "100m"
@@ -65,11 +80,31 @@ spec:
               cpu: "500m"
               memory: "256Mi"
 ---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: rdp-orchestrator-backend-config
+  namespace: guacamole-system
+spec:
+  # /session/start attend le démarrage du Pod gVisor (jusqu'à ~25 s)
+  timeoutSec: 60
+  healthCheck:
+    type: HTTP
+    requestPath: /healthz
+    port: 3000
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+---
 apiVersion: v1
 kind: Service
 metadata:
   name: rdp-orchestrator-service
   namespace: guacamole-system
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "rdp-orchestrator-backend-config"}'
 spec:
   type: ClusterIP
   selector:

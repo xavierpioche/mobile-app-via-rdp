@@ -1,0 +1,19 @@
+{
+  "name": "rdp-orchestrator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Orchestrateur des sessions RDP éphémères (GKE + Guacamole)",
+  "main": "session-manager.js",
+  "scripts": {
+    "start": "node session-manager.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^1.0.0",
+    "axios": "^1.7.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  }
+}

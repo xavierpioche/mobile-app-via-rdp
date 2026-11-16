@@ -3,8 +3,10 @@ FROM node:20-slim
 WORKDIR /app
 
 # Copier les fichiers de dépendances et installer en mode production
+# (npm ci si un package-lock.json est présent, sinon npm install)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi \
+    && npm cache clean --force
 
 # Copier le code source de l'orchestrateur
 COPY session-manager.js guac-json-auth.js ./

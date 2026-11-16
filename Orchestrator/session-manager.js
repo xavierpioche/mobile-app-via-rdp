@@ -1,10 +1,24 @@
 const express = require('express');
+const cors = require('cors');
 const k8s = require('@kubernetes/client-node');
 const crypto = require('crypto');
 const { createStatelessGuacSession } = require('./guac-json-auth');
 
+// Origines autorisées : WebView Capacitor (iOS = capacitor://localhost, Android = https://localhost)
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
+	'capacitor://localhost,https://localhost,http://localhost')
+	.split(',')
+	.map((o) => o.trim())
+	.filter(Boolean);
+
 const app = express();
+app.use(cors({ origin: ALLOWED_ORIGINS, methods: ['GET', 'POST', 'DELETE'] }));
 app.use(express.json());
+// navigator.sendBeacon() envoie du text/plain : on l'accepte aussi sur /wipe
+app.use(express.text());
+
+// Health check pour le load balancer GCE (Ingress) et la readinessProbe
+app.get('/healthz', (req, res) => res.status(200).send('ok'));
 
 const kc = new k8s.KubeConfig();
 kc.loadFromDefault();
@@ -30,8 +44,7 @@ app.post('/session/start', async (req, res) => {
 		const { authToken, screenWidth = 390, screenHeight = 844 } = req.body;
 		const sessionId = `rdp-${crypto.randomBytes(6).toString('hex')}`;
 		const rdpPassword = crypto.randomBytes(16).toString('hex');
-		const targetUrl = `https://tylshiloh.me/auth?token=$
-{encodeURIComponent(authToken)}`;
+		const targetUrl = `https://tylshiloh.me/auth?token=${encodeURIComponent(authToken)}`;
 		const podManifest = {
 			metadata: {
 				name: sessionId,
@@ -95,4 +108,4 @@ app.all('/session/:sessionId/wipe', async (req, res) => {
 	}
 });
 
-app.listen(3000, () => console.log('Orchestrateur RDP actif sur le port 3000'));
+app.listen(Number(process.env.PORT) || 3000,() => console.log('Orchestrateur RDP actif sur le port 3000'));
