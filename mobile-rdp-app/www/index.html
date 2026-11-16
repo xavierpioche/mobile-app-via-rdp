@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Cloud Mobile Browser</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #111; touch-action: none;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    #display-container {
+      /* Contexte d'empilement : les calques Guacamole sont en z-index:-1,
+         sans cela le fond du body les recouvre (écran noir). */
+      position: relative; z-index: 0;
+      width: 100vw; height: 100vh;
+      display: flex; align-items: flex-start; justify-content: flex-start;
+    }
+    #loader {
+      position: fixed; inset: 0; background: #111; color: #fff; padding: 24px;
+      display: flex; align-items: center; justify-content: center; text-align: center;
+      z-index: 20; font-size: 15px; line-height: 1.4;
+    }
+    #loader.error { color: #ff8a80; }
+    #hidden-keyboard-input {
+      position: fixed; top: -100px; left: 0; opacity: 0; width: 1px; height: 1px;
+    }
+    #kbd-toggle {
+      position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px;
+      border-radius: 24px; background: rgba(30, 30, 30, 0.85); color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2); font-size: 20px; z-index: 15;
+    }
+  </style>
+</head>
+<body>
+  <div id="loader">Démarrage de la session sécurisée...</div>
+  <div id="display-container"></div>
+  <input id="hidden-keyboard-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" />
+  <button id="kbd-toggle" aria-label="Clavier">⌨</button>
+
+  <script src="./js/guacamole-common.min.js"></script>
+  <script>
+    const ORCHESTRATOR_API = 'https://xmobile.tylshiloh.me';
+    const GUAC_WS_URL = 'wss://xmobile.tylshiloh.me/guacamole/websocket-tunnel';
+
+    // Jeton utilisateur : ?token=... dans l'URL (tests), sinon valeur de test.
+    // En production, le remplacer par le JWT court de l'utilisateur connecté.
+    const USER_TOKEN = new URLSearchParams(location.search).get('token') || 'test';
+
+    let guacClient = null;
+    let activeSessionId = null;
+    let wiped = false;
+
+    const loader = document.getElementById('loader');
+    function showStatus(msg, isError = false) {
+      loader.textContent = msg;
+      loader.classList.toggle('error', isError);
+      loader.style.display = 'flex';
+      console[isError ? 'error' : 'log']('[cloud-browser]', msg);
+    }
+
+    async function startRemoteBrowser(userAuthToken) {
+      const width = Math.floor(window.innerWidth);
+      const height = Math.floor(window.innerHeight);
+
+      showStatus('Démarrage de la session sécurisée...');
+      const res = await fetch(`${ORCHESTRATOR_API}/session/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ authToken: userAuthToken, screenWidth: width, screenHeight: height }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Orchestrateur : HTTP ${res.status}`);
+
+      activeSessionId = data.sessionId;
+      // Le jeton est après le '#' (…/#/client/<id>?token=…) : searchParams ne le voit pas.
+      const tokenMatch = data.guacamoleUrl.match(/[?&]token=([^&#]+)/);
+      if (!tokenMatch) throw new Error('Jeton Guacamole absent de la réponse');
+      const guacToken = decodeURIComponent(tokenMatch[1]);
+      showStatus('Connexion au navigateur distant...');
+
+      const tunnel = new Guacamole.WebSocketTunnel(GUAC_WS_URL);
+      guacClient = new Guacamole.Client(tunnel);
+
+      const displayEl = guacClient.getDisplay().getElement();
+      document.getElementById('display-container').appendChild(displayEl);
+
+      // États : 0 IDLE, 1 CONNECTING, 2 WAITING, 3 CONNECTED, 4 DISCONNECTING, 5 DISCONNECTED
+      guacClient.onstatechange = (state) => {
+        if (state === 3) loader.style.display = 'none';
+        if (state === 5 && !wiped) showStatus('Session terminée.');
+      };
+      guacClient.onerror = (status) => showStatus(`Erreur Guacamole : ${status.message || status.code}`, true);
+      tunnel.onerror = (status) => showStatus(`Erreur du tunnel : ${status.message || status.code}`, true);
+
+      guacClient.connect(
+        `token=${encodeURIComponent(guacToken)}` +
+        `&GUAC_ID=${encodeURIComponent(activeSessionId)}` +
+        `&GUAC_TYPE=c&GUAC_DATA_SOURCE=json` +
+        `&GUAC_WIDTH=${width}&GUAC_HEIGHT=${height}&GUAC_DPI=96`
+      );
+
+      setupMobileTouchControls(displayEl, guacClient);
+      setupMobileKeyboard(guacClient);
+    }
+
+    function setupMobileTouchControls(element, client) {
+      let startY = 0, lastY = 0, isScrolling = false;
+
+      element.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        startY = lastY = e.touches[0].clientY;
+        isScrolling = false;
+      }, { passive: false });
+
+      element.addEventListener('touchmove', (e) => {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+        const deltaY = touch.clientY - lastY;
+        if (Math.abs(touch.clientY - startY) > 10) isScrolling = true;
+
+        if (isScrolling && deltaY !== 0) {
+          // Défilement naturel : le contenu suit le doigt (4 = molette haut, 5 = molette bas)
+          const up = deltaY > 0;
+          const steps = Math.max(1, Math.floor(Math.abs(deltaY) / 15));
+          for (let i = 0; i < steps; i++) {
+            client.sendMouseState(new Guacamole.Mouse.State(touch.clientX, touch.clientY, false, false, false, up, !up));
+            client.sendMouseState(new Guacamole.Mouse.State(touch.clientX, touch.clientY, false, false, false, false, false));
+          }
+        }
+        lastY = touch.clientY;
+      }, { passive: false });
+
+      element.addEventListener('touchend', (e) => {
+        if (!isScrolling && e.changedTouches.length === 1) {
+          const touch = e.changedTouches[0];
+          client.sendMouseState(new Guacamole.Mouse.State(touch.clientX, touch.clientY, true));
+          setTimeout(() => client.sendMouseState(new Guacamole.Mouse.State(touch.clientX, touch.clientY, false)), 40);
+        }
+      });
+
+      // Souris (tests sur ordinateur / navigateur desktop)
+      const mouse = new Guacamole.Mouse(element);
+      mouse.onEach(['mousedown', 'mouseup', 'mousemove'], (e) => client.sendMouseState(e.state));
+    }
+
+    // Keysym X11 : Latin-1 direct, sinon 0x01000000 + code Unicode
+    const toKeysym = (cp) => (cp >= 0x20 && cp <= 0xFF) ? cp : (0x01000000 | cp);
+
+    function setupMobileKeyboard(client) {
+      const kbdInput = document.getElementById('hidden-keyboard-input');
+      document.getElementById('kbd-toggle').addEventListener('click', () => kbdInput.focus());
+
+      kbdInput.addEventListener('input', (e) => {
+        for (const char of e.target.value) {
+          const keysym = toKeysym(char.codePointAt(0));
+          client.sendKeyEvent(1, keysym);
+          client.sendKeyEvent(0, keysym);
+        }
+        e.target.value = '';
+      });
+
+      kbdInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace') {
+          client.sendKeyEvent(1, 0xFF08); client.sendKeyEvent(0, 0xFF08);
+        } else if (e.key === 'Enter') {
+          client.sendKeyEvent(1, 0xFF0D); client.sendKeyEvent(0, 0xFF0D);
+          kbdInput.blur();
+        }
+      });
+    }
+
+    function wipeSession() {
+      if (!activeSessionId || wiped) return;
+      wiped = true;
+      if (guacClient) guacClient.disconnect();
+      navigator.sendBeacon(`${ORCHESTRATOR_API}/session/${activeSessionId}/wipe`);
+    }
+
+    // Navigateur : fermeture de l'onglet / de la page
+    window.addEventListener('pagehide', wipeSession);
+    window.addEventListener('beforeunload', wipeSession);
+
+    // Capacitor : beforeunload ne se déclenche pas quand l'app passe en arrière-plan.
+    // Si le plugin @capacitor/app est installé, on détruit la session à ce moment-là.
+    const CapApp = window.Capacitor?.Plugins?.App;
+    if (CapApp) {
+      CapApp.addListener('appStateChange', ({ isActive }) => { if (!isActive) wipeSession(); });
+    }
+
+    startRemoteBrowser(USER_TOKEN).catch((err) => showStatus(`Échec : ${err.message}`, true));
+  </script>
+</body>
+</html>

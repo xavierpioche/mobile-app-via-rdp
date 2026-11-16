@@ -15,7 +15,8 @@ metadata:
   labels:
     app: guacamole
 spec:
-  replicas: 2
+  # 1 seul réplica : les jetons Guacamole sont en mémoire, non partagés entre instances
+  replicas: 1
   selector:
     matchLabels:
       app: guacamole

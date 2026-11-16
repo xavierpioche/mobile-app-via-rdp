@@ -25,7 +25,8 @@ kc.loadFromDefault();
 const k8sApi = kc.makeApiClient(k8s.CoreV1Api);
 
 const NAMESPACE = 'rdp-sessions';
-const IMAGE_URI = 'africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/kiosk-rdp:v1';
+const IMAGE_URI = process.env.KIOSK_IMAGE ||
+	'africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/kiosk-rdp:v3';
 
 async function waitForPodIP(podName, timeoutMs = 20000) {
 	const start = Date.now();

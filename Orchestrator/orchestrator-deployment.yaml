@@ -46,14 +46,16 @@ spec:
       serviceAccountName: rdp-orchestrator-sa
       containers:
         - name: orchestrator
-          image: africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/rdp-orchestrator:v1
+          image: africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/rdp-orchestrator:v2
           ports:
             - containerPort: 3000
           env:
+            - name: KIOSK_IMAGE
+              value: "africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/kiosk-rdp:v3"
             - name: GUAC_URL
               value: "http://guacamole-service.guacamole-system:8080/guacamole"
             - name: ALLOWED_ORIGINS
-              value: "capacitor://localhost,https://localhost,http://localhost"
+              value: "capacitor://localhost,https://localhost,http://localhost,http://localhost:8100"
             - name: JSON_SECRET_KEY
               valueFrom:
                 secretKeyRef:

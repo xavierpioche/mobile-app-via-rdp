@@ -26,6 +26,13 @@ spec:
       - namespaceSelector:
          matchLabels:
             kubernetes.io/metadata.name: kube-system
+      # NodeLocal DNSCache : les Pods node-local-dns sont en hostNetwork et ne sont
+      # pas couverts par le namespaceSelector. On autorise donc explicitement l'IP
+      # locale du cache et l'IP du service kube-dns (kubectl -n kube-system get svc kube-dns).
+      - ipBlock:
+          cidr: 169.254.20.10/32
+      - ipBlock:
+          cidr: 34.118.224.10/32
       ports:
         - protocol: UDP
           port: 53
