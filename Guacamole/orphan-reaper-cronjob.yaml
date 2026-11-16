@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rdp-reaper-sa
+  namespace: rdp-sessions
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rdp-reaper-role
+  namespace: rdp-sessions
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rdp-reaper-binding
+  namespace: rdp-sessions
+subjects:
+  - kind: ServiceAccount
+    name: rdp-reaper-sa
+    namespace: rdp-sessions
+roleRef:
+  kind: Role
+  name: rdp-reaper-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rdp-orphan-reaper
+  namespace: rdp-sessions
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: rdp-reaper-sa
+          restartPolicy: OnFailure
+          containers:
+            - name: reaper
+              image: bitnami/kubectl:latest
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -e
+                  NOW=$(date +%s)
+                  # Lister tous les Pods de session avec leur nom et date de création
+                  kubectl get pods -n rdp-sessions -l app=kiosk-rdp jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.creationTimestamp}{""}{end}' | while read -r POD_NAME CREATED_AT; do
+                    [ -z "$POD_NAME" ] && continue
+                    CREATED_EPOCH=$(date -d "$CREATED_AT" +%s)
+                    AGE=$((NOW - CREATED_EPOCH))
+                    # Ignorer les Pods créés il y a moins de 90 secondes (en cours de connexion)
+                    if [ "$AGE" -lt 90 ]; then
+                      continue
+                    fi
+                    # Vérifier si une connexion TCP ESTABLISHED existe sur le port 3389 dans le pod
+                    ACTIVE_CONN=$(kubectl exec -n rdp-sessions "$POD_NAME" sh -c "grep -i ':0D3D ' /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep ' 01 ' | wc -l" || echo "0")
+                    if [ "$ACTIVE_CONN" -eq 0 ]; then
+                      echo "Suppression du Pod orphelin : $POD_NAME (âge: ${AGE}s)"
+                      kubectl delete pod "$POD_NAME" -n rdp-sessions --grace-period=0 --force || true
+                    fi
+                  done

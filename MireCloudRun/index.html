@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <!-- Essentiel pour un rendu mobile fidèle -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>Test Mobile & Cloud Run</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --bg: #f8f9fa;
+            --card: #ffffff;
+            --text: #202124;
+            --border: #dadce0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            padding: 16px;
+            line-height: 1.5;
+        }
+
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            color: var(--primary);
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f1f3f4;
+            font-size: 0.95rem;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .badge {
+            background: #e8f0fe;
+            color: var(--primary);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        button {
+            width: 100%;
+            min-height: 48px; /* Taille minimale recommandée pour le tactile mobile */
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+
+        button:active {
+            opacity: 0.85;
+            transform: scale(0.99);
+        }
+
+        #touch-status {
+            margin-top: 10px;
+            text-align: center;
+            font-size: 0.9rem;
+            color: #188038;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>📱 Test Mobile & Cloud Run</h1>
+        <p style="font-size: 0.85rem; opacity: 0.9;">Conteneur actif</p>
+    </header>
+
+    <div class="card">
+        <h2>Dimensions & Écran</h2>
+        <div class="info-row">
+            <span>Viewport (CSS px) :</span>
+            <span class="badge" id="viewport-size">-</span>
+        </div>
+        <div class="info-row">
+            <span>Résolution physique :</span>
+            <span class="badge" id="screen-size">-</span>
+        </div>
+        <div class="info-row">
+            <span>Pixel Ratio (DPR) :</span>
+            <span class="badge" id="dpr">-</span>
+        </div>
+        <div class="info-row">
+            <span>Orientation :</span>
+            <span class="badge" id="orientation">-</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Infos Réseau & Navigateur</h2>
+        <div class="info-row">
+            <span>Support Tactile :</span>
+            <span class="badge" id="touch-support">-</span>
+        </div>
+        <div class="info-row">
+            <span>Protocole :</span>
+            <span class="badge" id="protocol">-</span>
+        </div>
+        <div class="info-row">
+            <span>Heure locale :</span>
+            <span class="badge" id="clock">-</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Test d'interaction tactile</h2>
+        <p style="font-size: 0.9rem; margin-bottom: 8px;">Appuyez sur le bouton ci-dessous pour vérifier la réactivité sur mobile :</p>
+        <button id="test-btn">Tester le clic / tap</button>
+        <div id="touch-status">En attente d'interaction...</div>
+    </div>
+
+    <script>
+        function updateMetrics() {
+            // Dimensions de la fenêtre d'affichage (Viewport)
+            document.getElementById('viewport-size').textContent = 
+                `${window.innerWidth} × ${window.innerHeight}`;
+
+            // Dimensions réelles de l'écran
+            document.getElementById('screen-size').textContent = 
+                `${window.screen.width} × ${window.screen.height}`;
+
+            // Densité de pixels (ex: 2 ou 3 sur Retina/AMOLED)
+            document.getElementById('dpr').textContent = 
+                window.devicePixelRatio || 1;
+
+            // Orientation
+            const isPortrait = window.innerHeight >= window.innerWidth;
+            document.getElementById('orientation').textContent = 
+                isPortrait ? 'Portrait 📱' : 'Paysage 🔄';
+
+            // Détection tactile
+            const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+            document.getElementById('touch-support').textContent = 
+                hasTouch ? 'Oui ✅' : 'Non (Souris) 🖱️';
+
+            // Protocole (Cloud Run force HTTPS par défaut)
+            document.getElementById('protocol').textContent = 
+                window.location.protocol.replace(':', '').toUpperCase();
+        }
+
+        function updateClock() {
+            document.getElementById('clock').textContent = 
+                new Date().toLocaleTimeString();
+        }
+
+        // Interaction bouton
+        let tapCount = 0;
+        document.getElementById('test-btn').addEventListener('click', () => {
+            tapCount++;
+            const status = document.getElementById('touch-status');
+            status.textContent = `Interaction réussie ! (${tapCount} ${tapCount > 1 ? 'taps' : 'tap'})`;
+        });
+
+        // Mise à jour dynamique lors du redimensionnement ou rotation de l'écran
+        window.addEventListener('resize', updateMetrics);
+        window.addEventListener('orientationchange', updateMetrics);
+
+        // Initialisation
+        updateMetrics();
+        updateClock();
+        setInterval(updateClock, 1000);
+    </script>
+</body>
+</html>

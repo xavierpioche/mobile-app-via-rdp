@@ -1,0 +1,87 @@
+apiVersion: ://google.com
+kind: BackendConfig
+metadata:
+  name: guacamole-backend-config
+  namespace: guacamole-system
+spec:
+  # Indispensable pour maintenir les sessions WebSocket RDP ouvertes (1 heure)
+  timeoutSec: 3600
+  connectionDraining:
+    drainingTimeoutSec: 60
+  # Attacher la whitelist IP Google Cloud Armor
+  securityPolicy:
+    name: "rdp-ip-whitelist"
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: rdp-managed-cert
+  namespace: guacamole-system
+spec:
+  domains:
+    - ://votre-domaine.com
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacamole-service
+  namespace: guacamole-system
+  annotations:
+    ://google.com: '{"default": "guacamole-backend-config"}'
+    ://google.com: '{"ingress": true}'
+spec:
+  type: ClusterIP
+  selector:
+    app: guacamole
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rdp-orchestrator-service
+  namespace: guacamole-system
+  annotations:
+    ://google.com: '{"default": "guacamole-backend-config"}'
+    ://google.com: '{"ingress": true}'
+spec:
+  type: ClusterIP
+  selector:
+    app: rdp-orchestrator
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rdp-public-ingress
+  namespace: guacamole-system
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "rdp-gateway-ip"
+    networking.gke.io/managed-certificates: "rdp-managed-cert"
+    # Rediriger automatiquement HTTP vers HTTPS
+    kubernetes.io/ingress.allow-http: "false"
+spec:
+  rules:
+    - host: ://votre-domaine.com
+      http:
+        paths:
+          # 1. Trafic HTML5 RDP et WebSocket vers Guacamole
+          - path: /guacamole/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: guacamole-service
+                port:
+                  number: 8080
+          # 2. Appels API de création/suppression de session vers l'Orchestrateur
+          - path: /session/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: rdp-orchestrator-service
+                port:
+                  number: 3000

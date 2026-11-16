@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacamole-server
+  namespace: guacamole-system
+  labels:
+    app: guacamole
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: guacamole
+  template:
+    metadata:
+      labels:
+        app: guacamole
+    spec:
+      containers:
+      - name: guacd
+        image: guacamole/guacd:1.5.5
+        ports:
+        - containerPort: 4822
+          name: guacd
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+
+      - name: guacamole-client
+        image: guacamole/guacamole:1.5.5
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: GUACD_HOSTNAME
+          value: "127.0.0.1"
+        - name: GUACD_PORT
+          value: "4822"
+        - name: JSON_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: guacamole-json-secret
+              key: JSON_SECRET_KEY
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi

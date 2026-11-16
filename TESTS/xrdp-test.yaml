@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xrdp-test
+  namespace: rdp-sessions
+  labels:
+    app: xrdp-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: xrdp-test
+  template:
+    metadata:
+      labels:
+        app: xrdp-test
+    spec:
+      containers:
+      - name: desktop
+        image: africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/kiosk-rdp:v2
+        env:
+        - name: USER
+          value: "rdpuser"
+        - name: PASSWORD
+          value: "rdppassword"
+        ports:
+        - containerPort: 3389
+          name: rdp
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xrdp-test-service
+  namespace: rdp-sessions
+spec:
+  selector:
+    app: xrdp-test
+  ports:
+  - port: 3389
+    targetPort: 3389
+    name: rdp

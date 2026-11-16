@@ -1,0 +1,32 @@
+#portforward
+kubectl port-forward -n guacamole-system svc/guacamole-service 8080:8080
+
+#test de connectivite
+curl -I http://localhost:8080/guacamole/
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/guacamole/api/tokens
+
+#on recupere la cle
+JSON_KEY=$(kubectl get secret guacamole-json-secret -n guacamole-system -o jsonpath='{.data.JSON_SECRET_KEY}' | base64 -d)
+echo "Clé JSON_SECRET_KEY : $JSON_KEY"
+
+curl -s -X POST "http://localhost:8080/guacamole/api/tokens" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "data=${ENCRYPTED_TOKEN}"
+
+
+kubectl get pods -n rdp-sessions -l app=xrdp-test -w
+
+kubectl get pods -n guacamole-system -l app=guacamole
+NAME                                READY   STATUS    RESTARTS   AGE
+guacamole-server-6f88b7d7f9-9jz5s   2/2     Running   0          39m
+guacamole-server-6f88b7d7f9-c59cd   2/2     Running   0          39m
+xavier@MacBook-Pro-de-Xavier TESTS % 
+xavier@MacBook-Pro-de-Xavier TESTS %    kubectl exec -n guacamole-system guacamole-server-6f88b7d7f9-9jz5s -c guacd -- getent hosts xrdp-test-service.rdp-sessions.svc.cluster.local
+34.118.230.114    xrdp-test-service.rdp-sessions.svc.cluster.local  xrdp-test-service.rdp-sessions.svc.cluster.local
+xavier@MacBook-Pro-de-Xavier TESTS % 
+
+
+kubectl get secret guacamole-json-secret -n guacamole-system \
+     -o jsonpath='{.data.JSON_SECRET_KEY}' | base64 -d | xxd
+kubectl get secret guacamole-json-secret -n guacamole-system \
+     -o jsonpath='{.data.JSON_SECRET_KEY}' | base64 -d | wc -c
