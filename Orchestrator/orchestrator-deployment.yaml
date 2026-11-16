@@ -51,7 +51,7 @@ spec:
             - containerPort: 3000
           env:
             - name: KIOSK_IMAGE
-              value: "africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/kiosk-rdp:v3"
+              value: "africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/kiosk-rdp:v4"
             - name: GUAC_URL
               value: "http://guacamole-service.guacamole-system:8080/guacamole"
             - name: ALLOWED_ORIGINS

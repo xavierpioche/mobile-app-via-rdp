@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Connexion</title>
+  <style>
+    :root {
+      --bg: #f4f6fb; --card: #fff; --text: #1d2433; --muted: #5d6779;
+      --primary: #2f6fed; --ok: #1f9d55; --warn: #c27c0e; --border: #e3e7ef;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); padding: 16px; line-height: 1.45;
+    }
+    header {
+      background: var(--primary); color: #fff; border-radius: 14px;
+      padding: 22px 18px; text-align: center; margin-bottom: 14px;
+    }
+    header h1 { font-size: 22px; }
+    header p { font-size: 13px; opacity: .85; margin-top: 4px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 16px; margin-bottom: 14px;
+    }
+    .card h2 { font-size: 16px; color: var(--primary); margin-bottom: 10px; }
+    .status { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+    .ok .dot { background: var(--ok); } .ok { color: var(--ok); }
+    .warn .dot { background: var(--warn); } .warn { color: var(--warn); }
+    .row {
+      display: flex; justify-content: space-between; gap: 12px;
+      padding: 8px 0; border-top: 1px solid var(--border); font-size: 14px;
+    }
+    .row:first-of-type { border-top: 0; }
+    .row span:first-child { color: var(--muted); }
+    .row span:last-child { font-family: ui-monospace, Menlo, monospace; text-align: right; word-break: break-all; }
+    .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Espace sécurisé</h1>
+    <p>Navigateur isolé · session éphémère</p>
+  </header>
+
+  <section class="card">
+    <h2>Authentification</h2>
+    <div id="status" class="status warn"><span class="dot"></span><span id="status-text">Vérification…</span></div>
+    <div id="details" style="margin-top:10px"></div>
+    <p class="note" id="note"></p>
+  </section>
+
+  <section class="card">
+    <h2>Écran</h2>
+    <div class="row"><span>Viewport (CSS px)</span><span id="vp"></span></div>
+    <div class="row"><span>Pixel ratio</span><span id="dpr"></span></div>
+    <div class="row"><span>Heure locale</span><span id="clock"></span></div>
+  </section>
+
+  <script>
+    (function () {
+      const STORAGE_KEY = 'auth_token';
+      const params = new URLSearchParams(location.search);
+      const urlToken = params.get('token');
+
+      // 1. Récupérer le jeton puis l'effacer de la barre d'adresse et de l'historique
+      if (urlToken) {
+        sessionStorage.setItem(STORAGE_KEY, urlToken);
+        params.delete('token');
+        const clean = location.pathname + (params.toString() ? '?' + params : '') + location.hash;
+        history.replaceState(null, '', clean);
+      }
+      const token = sessionStorage.getItem(STORAGE_KEY);
+
+      const statusEl = document.getElementById('status');
+      const statusText = document.getElementById('status-text');
+      const details = document.getElementById('details');
+      const note = document.getElementById('note');
+
+      function row(label, value) {
+        const div = document.createElement('div');
+        div.className = 'row';
+        const a = document.createElement('span'); a.textContent = label;
+        const b = document.createElement('span'); b.textContent = value;
+        div.append(a, b);
+        details.append(div);
+      }
+
+      // Décodage du payload d'un JWT (lecture seule : la signature n'est PAS vérifiée ici)
+      function decodeJwt(t) {
+        const parts = t.split('.');
+        if (parts.length !== 3) return null;
+        try {
+          const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+          const json = decodeURIComponent(atob(b64).split('').map(
+            (c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+          return JSON.parse(json);
+        } catch (e) { return null; }
+      }
+
+      if (!token) {
+        statusText.textContent = 'Aucun jeton reçu';
+        note.textContent = 'Ouvrez cette page depuis l\'application mobile.';
+        return;
+      }
+
+      const masked = token.length > 8 ? token.slice(0, 4) + '…' + token.slice(-4) : '••••';
+      row('Jeton', masked);
+
+      const claims = decodeJwt(token);
+      if (claims) {
+        if (claims.sub) row('Utilisateur', String(claims.sub));
+        if (claims.exp) {
+          const expired = claims.exp * 1000 < Date.now();
+          row('Expiration', new Date(claims.exp * 1000).toLocaleTimeString() + (expired ? ' (expiré)' : ''));
+          if (expired) {
+            statusText.textContent = 'Jeton expiré';
+            note.textContent = 'Relancez la session depuis l\'application mobile.';
+            return;
+          }
+        }
+        row('Type', 'JWT');
+      } else {
+        row('Type', 'Jeton opaque');
+      }
+
+      statusEl.className = 'status ok';
+      statusText.textContent = 'Session ouverte';
+      note.textContent = 'Page statique : le jeton est lu mais pas vérifié côté serveur. '
+        + 'En production, la vérification (signature, usage unique) doit se faire sur votre backend.';
+    })();
+
+    // Infos écran
+    const vp = document.getElementById('vp');
+    const dpr = document.getElementById('dpr');
+    const clock = document.getElementById('clock');
+    function refresh() {
+      vp.textContent = window.innerWidth + ' × ' + window.innerHeight;
+      dpr.textContent = window.devicePixelRatio;
+      clock.textContent = new Date().toLocaleTimeString();
+    }
+    refresh();
+    setInterval(refresh, 1000);
+    window.addEventListener('resize', refresh);
+  </script>
+</body>
+</html>
