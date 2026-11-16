@@ -1,0 +1,21 @@
+# Pipeline Cloud Deploy (appliqué par deploy/bootstrap.sh, qui remplace les __VARIABLES__).
+apiVersion: deploy.cloud.google.com/v1
+kind: DeliveryPipeline
+metadata:
+  name: rdp-browser
+description: Navigateur mobile isolé (orchestrateur, proxy Guacamole, kiosques gVisor)
+serialPipeline:
+  stages:
+    - targetId: prod
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: prod
+description: Cluster GKE de production
+gke:
+  cluster: projects/__PROJECT_ID__/locations/__ZONE__/clusters/__CLUSTER__
+requireApproval: false
+executionConfigs:
+  - usages: [RENDER, DEPLOY]
+    serviceAccount: __PIPELINE_SA__

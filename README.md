@@ -5,3 +5,4 @@ Chromium en mode kiosque dans un Pod GKE sécurisé par gVisor, affiché sur le
 téléphone via le protocole Guacamole (HTML5 RDP).
 
 - [Cycle de vie d'une session (diagramme de séquence)](docs/sequence-session.md)
+- [Redéployer tout « from scratch » (Cloud Build + Cloud Deploy)](docs/redeploiement.md)

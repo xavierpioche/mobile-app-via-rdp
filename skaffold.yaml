@@ -1,0 +1,21 @@
+# Rendu des manifestes pour Cloud Deploy (pas de build ici : Cloud Build construit
+# les images et passe leurs références en paramètres de déploiement).
+#
+# Paramètres (commentaires « # from-param: ${...} » dans les manifestes) :
+#   orchestrator_image, proxy_image, kiosk_image, kube_dns_cidr
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: mobile-app-via-rdp
+manifests:
+  rawYaml:
+    - deploy/k8s/namespaces.yaml
+    - Guacamole/rdp-network-policy.yaml
+    - Guacamole/orphan-reaper-cronjob.yaml
+    - GuacProxy/guac-proxy-deployment.yaml
+    - Orchestrator/orchestrator-deployment.yaml
+    - GKE-Admin/guacamole-managed-cert.yaml
+    - GKE-Admin/guacamole-frontendconfig.yaml
+    - GKE-Admin/guacamole-ingress.yaml
+deploy:
+  kubectl: {}

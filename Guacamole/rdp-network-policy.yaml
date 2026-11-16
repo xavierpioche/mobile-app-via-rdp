@@ -32,8 +32,9 @@ spec:
       # locale du cache et l'IP du service kube-dns (kubectl -n kube-system get svc kube-dns).
       - ipBlock:
           cidr: 169.254.20.10/32
+      # IP du service kube-dns : propre à chaque cluster, fournie par le pipeline
       - ipBlock:
-          cidr: 34.118.224.10/32
+          cidr: 34.118.224.10/32 # from-param: ${kube_dns_cidr}
       ports:
         - protocol: UDP
           port: 53

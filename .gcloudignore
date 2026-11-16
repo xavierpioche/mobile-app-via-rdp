@@ -1,0 +1,9 @@
+# Fichiers envoyés à Cloud Build / Cloud Deploy : uniquement le nécessaire
+.git
+.gitignore
+.claude/
+**/node_modules/
+TESTS/
+*.html
+!mobile-rdp-app/www/index.html
+!WebApp/*.html

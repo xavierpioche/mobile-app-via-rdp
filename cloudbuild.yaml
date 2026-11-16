@@ -1,0 +1,82 @@
+# Construit les trois images puis crée une release Cloud Deploy.
+#
+#   gcloud builds submit --config=cloudbuild.yaml --region=africa-south1 \
+#     --service-account=projects/PROJECT_ID/serviceAccounts/rdp-pipeline@PROJECT_ID.iam.gserviceaccount.com .
+#
+# Prérequis : deploy/bootstrap.sh (cluster, secrets, compte de service, pipeline).
+substitutions:
+  _REGION: africa-south1
+  _ZONE: africa-south1-a
+  _CLUSTER: rdp-browser-cluster
+  _REPO: rdp-browser-repo
+  _PIPELINE: rdp-browser
+
+# Compte de service rdp-pipeline passé avec --service-account (voir bootstrap.sh)
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true
+timeout: 1800s
+
+steps:
+  # Les trois images sont construites en parallèle, taguées avec l'identifiant du build
+  - id: kiosk
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['-']
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/kiosk-rdp:${BUILD_ID}', 'Kiosque']
+  - id: orchestrator
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['-']
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/rdp-orchestrator:${BUILD_ID}', 'Orchestrator']
+  - id: proxy
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['-']
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/guac-proxy:${BUILD_ID}', 'GuacProxy']
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['kiosk', 'orchestrator', 'proxy']
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        for img in kiosk-rdp rdp-orchestrator guac-proxy; do
+          docker push "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/$${img}:${BUILD_ID}"
+        done
+
+  # IP du service kube-dns, propre à chaque cluster (requise par la NetworkPolicy).
+  # L'image cloud-sdk ne contient plus kubectl : on utilise le builder kubectl.
+  - id: kube-dns
+    name: gcr.io/cloud-builders/kubectl
+    waitFor: ['-']
+    env:
+      - CLOUDSDK_COMPUTE_ZONE=${_ZONE}
+      - CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER}
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        /builder/kubectl.bash -n kube-system get svc kube-dns -o jsonpath='{.spec.clusterIP}' \
+          | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | tail -1 > /workspace/kube_dns_ip
+        test -s /workspace/kube_dns_ip
+        echo "kube-dns : $$(cat /workspace/kube_dns_ip)"
+
+  # Crée la release : images + IP kube-dns en paramètres de déploiement
+  - id: release
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:stable
+    waitFor: ['push', 'kube-dns']
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        KUBE_DNS_IP="$$(cat /workspace/kube_dns_ip)"
+        IMG="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}"
+        RELEASE="rel-$$(date -u +%Y%m%d-%H%M%S)-$$(echo ${BUILD_ID} | cut -c1-8)"
+        echo "Release $${RELEASE} (kube-dns $${KUBE_DNS_IP})"
+        gcloud deploy releases create "$${RELEASE}" \
+          --project=${PROJECT_ID} --region=${_REGION} \
+          --delivery-pipeline=${_PIPELINE} \
+          --skaffold-file=skaffold.yaml --source=. \
+          --deploy-parameters="orchestrator_image=$${IMG}/rdp-orchestrator:${BUILD_ID},proxy_image=$${IMG}/guac-proxy:${BUILD_ID},kiosk_image=$${IMG}/kiosk-rdp:${BUILD_ID},kube_dns_cidr=$${KUBE_DNS_IP}/32"

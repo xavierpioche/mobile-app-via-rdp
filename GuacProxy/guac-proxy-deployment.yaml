@@ -33,7 +33,7 @@ spec:
               app: guac-proxy
       containers:
         - name: proxy
-          image: africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/guac-proxy:v1
+          image: africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/guac-proxy:v1 # from-param: ${proxy_image}
           ports:
             - containerPort: 8080
           env:
