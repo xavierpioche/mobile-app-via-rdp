@@ -3,6 +3,7 @@ const cors = require('cors');
 const k8s = require('@kubernetes/client-node');
 const crypto = require('crypto');
 const { createStatelessGuacSession } = require('./guac-json-auth');
+const { requireUser, wipeTokenFor, checkWipeToken, userLabel } = require('./auth');
 
 // Origines autorisées : WebView Capacitor (iOS = capacitor://localhost, Android = https://localhost)
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
@@ -12,10 +13,14 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
 	.filter(Boolean);
 
 const app = express();
-app.use(cors({ origin: ALLOWED_ORIGINS, methods: ['GET', 'POST', 'DELETE'] }));
-app.use(express.json());
-// navigator.sendBeacon() envoie du text/plain : on l'accepte aussi sur /wipe
-app.use(express.text());
+app.use(cors({
+	origin: ALLOWED_ORIGINS,
+	methods: ['GET', 'POST', 'DELETE'],
+	allowedHeaders: ['Content-Type', 'Authorization', 'X-Wipe-Token'],
+}));
+app.use(express.json({ limit: '8kb' }));
+// navigator.sendBeacon() envoie du text/plain : le jeton de wipe peut arriver dans le corps
+app.use(express.text({ limit: '1kb' }));
 
 // Health check pour le load balancer GCE (Ingress) et la readinessProbe
 app.get('/healthz', (req, res) => res.status(200).send('ok'));
@@ -40,21 +45,51 @@ async function waitForPodIP(podName, timeoutMs = 20000) {
 	throw new Error('Timeout lors du démarrage du Pod MicroVM');
 }
 
-app.post('/session/start', async (req, res) => {
+const SESSION_ID_RE = /^rdp-[0-9a-f]{12}$/;
+const clampInt = (v, def, min, max) => {
+	const n = Number.parseInt(v, 10);
+	return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+};
+
+async function deletePod(name) {
+	await k8sApi.deleteNamespacedPod({ name, namespace: NAMESPACE, gracePeriodSeconds: 0 });
+}
+
+// Une seule session par utilisateur : les anciennes sont détruites au démarrage d'une nouvelle
+async function wipeUserSessions(userId) {
+	const list = await k8sApi.listNamespacedPod({
+		namespace: NAMESPACE,
+		labelSelector: `app=kiosk-rdp,user=${userId}`,
+	});
+	await Promise.all(list.items.map((p) => deletePod(p.metadata.name).catch(() => {})));
+	return list.items.length;
+}
+
+app.post('/session/start', requireUser, async (req, res) => {
+	const sessionId = `rdp-${crypto.randomBytes(6).toString('hex')}`;
+	let podCreated = false;
 	try {
-		const { authToken, screenWidth = 390, screenHeight = 844 } = req.body;
-		const sessionId = `rdp-${crypto.randomBytes(6).toString('hex')}`;
+		const body = typeof req.body === 'object' && req.body ? req.body : {};
+		const screenWidth = clampInt(body.screenWidth, 390, 200, 2560);
+		const screenHeight = clampInt(body.screenHeight, 844, 200, 2560);
+		const userId = userLabel(req.user.sub);
+
+		const replaced = await wipeUserSessions(userId);
+		if (replaced) console.log(`[session] ${replaced} ancienne(s) session(s) détruite(s) pour ${userId}`);
+
 		const rdpPassword = crypto.randomBytes(16).toString('hex');
-		const targetUrl = `https://tylshiloh.me/auth?token=${encodeURIComponent(authToken)}`;
+		// Le JWT déjà vérifié est transmis à l'application web finale (connexion automatique)
+		const targetUrl = `https://tylshiloh.me/auth?token=${encodeURIComponent(req.userToken)}`;
 		const podManifest = {
 			metadata: {
 				name: sessionId,
-				labels: { app: 'kiosk-rdp', session: sessionId },
+				labels: { app: 'kiosk-rdp', session: sessionId, user: userId },
 			},
 			spec: {
 				runtimeClassName: 'gvisor',
 				restartPolicy: 'Never',
 				activeDeadlineSeconds: 3600,
+				automountServiceAccountToken: false,
 				containers: [
 					{
 						name: 'xrdp-chromium',
@@ -81,6 +116,7 @@ app.post('/session/start', async (req, res) => {
 			},
 		};
 		await k8sApi.createNamespacedPod({ namespace: NAMESPACE, body: podManifest });
+		podCreated = true;
 		const podIP = await waitForPodIP(sessionId);
 		await new Promise((r) => setTimeout(r, 1500));
 		const guacamoleUrl = await createStatelessGuacSession({
@@ -90,23 +126,43 @@ app.post('/session/start', async (req, res) => {
 			screenWidth,
 			screenHeight,
 		});
-		res.json({ sessionId, guacamoleUrl });
+		console.log(`[session] ${sessionId} démarrée pour ${userId} (${screenWidth}x${screenHeight})`);
+		res.json({ sessionId, guacamoleUrl, wipeToken: wipeTokenFor(sessionId) });
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		console.error(`[session] échec ${sessionId} : ${err.message}`);
+		if (podCreated) await deletePod(sessionId).catch(() => {});
+		res.status(500).json({ error: 'échec du démarrage de la session' });
 	}
 });
 
-app.all('/session/:sessionId/wipe', async (req, res) => {
+// Destruction : exige le jeton de wipe renvoyé par /session/start
+// (en-tête X-Wipe-Token, ou corps texte/JSON pour navigator.sendBeacon)
+async function wipeHandler(req, res) {
+	const { sessionId } = req.params;
+	if (!SESSION_ID_RE.test(sessionId)) return res.status(400).json({ error: 'identifiant invalide' });
+
+	const token = req.get('x-wipe-token')
+		|| (typeof req.body === 'string' ? req.body.trim() : req.body?.wipeToken);
+	if (!checkWipeToken(sessionId, token)) {
+		console.warn(`[wipe] refus pour ${sessionId}`);
+		return res.status(403).json({ error: 'jeton de destruction invalide' });
+	}
 	try {
-		await k8sApi.deleteNamespacedPod({
-			name: req.params.sessionId,
-			namespace: NAMESPACE,
-			gracePeriodSeconds: 0,
-		});
+		const pod = await k8sApi.readNamespacedPod({ name: sessionId, namespace: NAMESPACE });
+		// Ne jamais supprimer autre chose qu'un Pod de session kiosque
+		if (pod.metadata?.labels?.app !== 'kiosk-rdp') return res.status(404).json({ error: 'session inconnue' });
+		await deletePod(sessionId);
+		console.log(`[wipe] ${sessionId} détruite`);
 		res.json({ status: 'wiped' });
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		if (err.code === 404 || err.statusCode === 404 || /not ?found/i.test(err.message)) {
+			return res.json({ status: 'already-gone' });
+		}
+		console.error(`[wipe] échec ${sessionId} : ${err.message}`);
+		res.status(500).json({ error: 'échec de la destruction' });
 	}
-});
+}
+app.post('/session/:sessionId/wipe', wipeHandler);
+app.delete('/session/:sessionId/wipe', wipeHandler);
 
 app.listen(Number(process.env.PORT) || 3000,() => console.log('Orchestrateur RDP actif sur le port 3000'));

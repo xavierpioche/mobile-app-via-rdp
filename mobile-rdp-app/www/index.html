@@ -45,12 +45,13 @@
     const ORCHESTRATOR_API = 'https://xmobile.tylshiloh.me';
     const GUAC_WS_URL = 'wss://xmobile.tylshiloh.me/guacamole/websocket-tunnel';
 
-    // Jeton utilisateur : ?token=... dans l'URL (tests), sinon valeur de test.
-    // En production, le remplacer par le JWT court de l'utilisateur connecté.
-    const USER_TOKEN = new URLSearchParams(location.search).get('token') || 'test';
+    // JWT utilisateur (HS256, aud "rdp-orchestrator") : ?token=... dans l'URL pour les tests.
+    // En production, le récupérer auprès de votre backend d'identité après connexion.
+    const USER_TOKEN = new URLSearchParams(location.search).get('token');
 
     let guacClient = null;
     let activeSessionId = null;
+    let wipeToken = null;
     let wiped = false;
 
     const loader = document.getElementById('loader');
@@ -68,13 +69,15 @@
       showStatus('Démarrage de la session sécurisée...');
       const res = await fetch(`${ORCHESTRATOR_API}/session/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ authToken: userAuthToken, screenWidth: width, screenHeight: height }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userAuthToken}` },
+        body: JSON.stringify({ screenWidth: width, screenHeight: height }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) throw new Error('Authentification refusée (jeton absent, invalide ou expiré)');
       if (!res.ok) throw new Error(data.error || `Orchestrateur : HTTP ${res.status}`);
 
       activeSessionId = data.sessionId;
+      wipeToken = data.wipeToken;
       // Le jeton est après le '#' (…/#/client/<id>?token=…) : searchParams ne le voit pas.
       const tokenMatch = data.guacamoleUrl.match(/[?&]token=([^&#]+)/);
       if (!tokenMatch) throw new Error('Jeton Guacamole absent de la réponse');
@@ -177,7 +180,9 @@
       if (!activeSessionId || wiped) return;
       wiped = true;
       if (guacClient) guacClient.disconnect();
-      navigator.sendBeacon(`${ORCHESTRATOR_API}/session/${activeSessionId}/wipe`);
+      // Corps text/plain : pas de pré-requête CORS, compatible sendBeacon
+      navigator.sendBeacon(`${ORCHESTRATOR_API}/session/${activeSessionId}/wipe`,
+        new Blob([wipeToken || ''], { type: 'text/plain' }));
     }
 
     // Navigateur : fermeture de l'onglet / de la page
@@ -191,7 +196,11 @@
       CapApp.addListener('appStateChange', ({ isActive }) => { if (!isActive) wipeSession(); });
     }
 
-    startRemoteBrowser(USER_TOKEN).catch((err) => showStatus(`Échec : ${err.message}`, true));
+    if (!USER_TOKEN) {
+      showStatus('Aucun jeton utilisateur : ouvrez l\'app avec ?token=<JWT>', true);
+    } else {
+      startRemoteBrowser(USER_TOKEN).catch((err) => showStatus(`Échec : ${err.message}`, true));
+    }
   </script>
 </body>
 </html>
