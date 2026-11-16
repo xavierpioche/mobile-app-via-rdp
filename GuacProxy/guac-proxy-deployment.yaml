@@ -1,0 +1,137 @@
+# Proxy Guacamole sans état : chaque Pod = proxy WebSocket (Node) + guacd local.
+# Aucun jeton en mémoire : les réplicas sont interchangeables.
+#
+# Secret partagé avec l'orchestrateur, créé hors dépôt :
+#   kubectl -n guacamole-system create secret generic guac-tunnel-secret \
+#     --from-literal=TUNNEL_SECRET="$(openssl rand -hex 32)"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guac-proxy
+  namespace: guacamole-system
+  labels:
+    app: guac-proxy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: guac-proxy
+  template:
+    metadata:
+      labels:
+        app: guac-proxy
+    spec:
+      automountServiceAccountToken: false
+      # Laisse aux WebSockets en cours le temps de se terminer lors d'un déploiement
+      terminationGracePeriodSeconds: 60
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: guac-proxy
+      containers:
+        - name: proxy
+          image: africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/guac-proxy:v1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GUACD_HOST
+              value: "127.0.0.1"
+            - name: GUACD_PORT
+              value: "4822"
+            - name: ALLOWED_ORIGINS
+              value: "capacitor://localhost,https://localhost,http://localhost,http://localhost:8100"
+            - name: TUNNEL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: guac-tunnel-secret
+                  key: TUNNEL_SECRET
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            # UID de l'utilisateur "node" de l'image node:20-slim
+            runAsUser: 1000
+        - name: guacd
+          image: guacamole/guacd:1.5.5
+          ports:
+            - containerPort: 4822
+          readinessProbe:
+            tcpSocket:
+              port: 4822
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: guac-proxy-backend-config
+  namespace: guacamole-system
+spec:
+  # Durée maximale d'un WebSocket derrière le load balancer (= durée max d'une session)
+  timeoutSec: 3600
+  connectionDraining:
+    drainingTimeoutSec: 60
+  healthCheck:
+    type: HTTP
+    requestPath: /healthz
+    port: 8080
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guac-proxy-service
+  namespace: guacamole-system
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "guac-proxy-backend-config"}'
+spec:
+  type: ClusterIP
+  selector:
+    app: guac-proxy
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: guac-proxy-pdb
+  namespace: guacamole-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: guac-proxy

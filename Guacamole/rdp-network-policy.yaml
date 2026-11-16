@@ -15,9 +15,10 @@ spec:
       - namespaceSelector:
           matchLabels:
             kubernetes.io/metadata.name: guacamole-system
+        # guacd tourne dans les Pods du proxy sans état (GuacProxy)
         podSelector:
           matchLabels:
-            app: guacamole
+            app: guac-proxy
       ports:
         - protocol: TCP
           port: 3389

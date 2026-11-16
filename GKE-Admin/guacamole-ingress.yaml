@@ -21,11 +21,13 @@ spec:
             name: rdp-orchestrator-service
             port:
               number: 3000
-      # Tout le reste (HTML5 RDP + WebSocket) vers Guacamole
-      - path: /*
+      # Tunnel WebSocket Guacamole via le proxy sans état (plusieurs réplicas)
+      - path: /tunnel
         pathType: ImplementationSpecific
         backend:
           service:
-            name: guacamole-service
+            name: guac-proxy-service
             port:
               number: 8080
+      # Toute autre adresse : backend par défaut de GKE (404).
+      # L'ancienne application web Guacamole (Tomcat) a été retirée.

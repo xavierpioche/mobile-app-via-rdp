@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const k8s = require('@kubernetes/client-node');
 const crypto = require('crypto');
-const { createStatelessGuacSession } = require('./guac-json-auth');
+const { createTunnelToken } = require('./tunnel-token');
 const { requireUser, wipeTokenFor, checkWipeToken, userLabel } = require('./auth');
 
 // Origines autorisées : WebView Capacitor (iOS = capacitor://localhost, Android = https://localhost)
@@ -119,7 +119,7 @@ app.post('/session/start', requireUser, async (req, res) => {
 		podCreated = true;
 		const podIP = await waitForPodIP(sessionId);
 		await new Promise((r) => setTimeout(r, 1500));
-		const guacamoleUrl = await createStatelessGuacSession({
+		const tunnelToken = createTunnelToken({
 			sessionId,
 			podIP,
 			rdpPassword,
@@ -127,7 +127,7 @@ app.post('/session/start', requireUser, async (req, res) => {
 			screenHeight,
 		});
 		console.log(`[session] ${sessionId} démarrée pour ${userId} (${screenWidth}x${screenHeight})`);
-		res.json({ sessionId, guacamoleUrl, wipeToken: wipeTokenFor(sessionId) });
+		res.json({ sessionId, tunnelToken, wipeToken: wipeTokenFor(sessionId) });
 	} catch (err) {
 		console.error(`[session] échec ${sessionId} : ${err.message}`);
 		if (podCreated) await deletePod(sessionId).catch(() => {});

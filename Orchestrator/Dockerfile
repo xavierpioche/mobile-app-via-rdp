@@ -9,10 +9,10 @@ RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit
     && npm cache clean --force
 
 # Copier le code source de l'orchestrateur
-COPY session-manager.js guac-json-auth.js auth.js ./
+COPY session-manager.js auth.js tunnel-token.js ./
 
 # Échoue au build si un fichier JS a une erreur de syntaxe
-RUN node --check session-manager.js && node --check guac-json-auth.js && node --check auth.js
+RUN node --check session-manager.js && node --check auth.js && node --check tunnel-token.js
 
 EXPOSE 3000
 

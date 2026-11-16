@@ -43,7 +43,8 @@
   <script src="./js/guacamole-common.min.js"></script>
   <script>
     const ORCHESTRATOR_API = 'https://xmobile.tylshiloh.me';
-    const GUAC_WS_URL = 'wss://xmobile.tylshiloh.me/guacamole/websocket-tunnel';
+    // Proxy Guacamole sans état (plusieurs réplicas) : le jeton chiffré suffit
+    const GUAC_WS_URL = 'wss://xmobile.tylshiloh.me/tunnel';
 
     // JWT utilisateur (HS256, aud "rdp-orchestrator") : ?token=... dans l'URL pour les tests.
     // En production, le récupérer auprès de votre backend d'identité après connexion.
@@ -78,10 +79,7 @@
 
       activeSessionId = data.sessionId;
       wipeToken = data.wipeToken;
-      // Le jeton est après le '#' (…/#/client/<id>?token=…) : searchParams ne le voit pas.
-      const tokenMatch = data.guacamoleUrl.match(/[?&]token=([^&#]+)/);
-      if (!tokenMatch) throw new Error('Jeton Guacamole absent de la réponse');
-      const guacToken = decodeURIComponent(tokenMatch[1]);
+      if (!data.tunnelToken) throw new Error('Jeton de tunnel absent de la réponse');
       showStatus('Connexion au navigateur distant...');
 
       const tunnel = new Guacamole.WebSocketTunnel(GUAC_WS_URL);
@@ -98,12 +96,8 @@
       guacClient.onerror = (status) => showStatus(`Erreur Guacamole : ${status.message || status.code}`, true);
       tunnel.onerror = (status) => showStatus(`Erreur du tunnel : ${status.message || status.code}`, true);
 
-      guacClient.connect(
-        `token=${encodeURIComponent(guacToken)}` +
-        `&GUAC_ID=${encodeURIComponent(activeSessionId)}` +
-        `&GUAC_TYPE=c&GUAC_DATA_SOURCE=json` +
-        `&GUAC_WIDTH=${width}&GUAC_HEIGHT=${height}&GUAC_DPI=96`
-      );
+      // Taille d'écran, IP du Pod et mot de passe RDP sont dans le jeton chiffré
+      guacClient.connect(`token=${encodeURIComponent(data.tunnelToken)}`);
 
       setupMobileTouchControls(displayEl, guacClient);
       setupMobileKeyboard(guacClient);

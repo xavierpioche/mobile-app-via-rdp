@@ -46,22 +46,22 @@ spec:
       serviceAccountName: rdp-orchestrator-sa
       containers:
         - name: orchestrator
-          image: africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/rdp-orchestrator:v3
+          image: africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/rdp-orchestrator:v4
           ports:
             - containerPort: 3000
           env:
             - name: KIOSK_IMAGE
               value: "africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/kiosk-rdp:v4"
-            - name: GUAC_URL
-              value: "http://guacamole-service.guacamole-system:8080/guacamole"
             - name: ALLOWED_ORIGINS
               value: "capacitor://localhost,https://localhost,http://localhost,http://localhost:8100"
-            - name: JSON_SECRET_KEY
+            # Clé partagée avec le proxy Guacamole sans état (GuacProxy/guac-proxy-deployment.yaml)
+            - name: TUNNEL_SECRET
               valueFrom:
                 secretKeyRef:
-                  # Même secret que Guacamole (Guacamole/guacamole-deployment.yaml)
-                  name: guacamole-json-secret
-                  key: JSON_SECRET_KEY
+                  name: guac-tunnel-secret
+                  key: TUNNEL_SECRET
+            - name: TUNNEL_TOKEN_TTL_SECONDS
+              value: "120"
             # Authentification : JWT HS256 des utilisateurs + jetons de destruction.
             # Secret créé hors dépôt :
             #   kubectl -n guacamole-system create secret generic orchestrator-auth \

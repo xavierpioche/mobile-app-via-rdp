@@ -1,0 +1,16 @@
+{
+  "name": "guac-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Proxy WebSocket sans état entre guacamole-common-js et guacd",
+  "main": "guac-proxy.js",
+  "scripts": {
+    "start": "node guac-proxy.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
