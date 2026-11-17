@@ -8,9 +8,9 @@ gcloud compute addresses describe guacamole-static-ip \
     --format="value(address)"
 #136.82.204.52
 
-kubectl apply -f guacamole-backendconfig.yaml
+#kubectl apply -f guacamole-backendconfig.yaml
 
 # Associer le BackendConfig et activer le Container-Native Load Balancing (NEG)
-kubectl annotate service guacamole-service -n guacamole-system \
-  cloud.google.com/backend-config='{"default": "guacamole-backend-config"}' \
-  cloud.google.com/neg='{"ingress": true}' --overwrite
+#kubectl annotate service guacamole-service -n guacamole-system \
+#  cloud.google.com/backend-config='{"default": "guacamole-backend-config"}' \
+#  cloud.google.com/neg='{"ingress": true}' --overwrite
