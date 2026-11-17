@@ -23,7 +23,7 @@ echo "== 1. JWT (sub=${SUB}, ${TTL} s)"
 JWT="$(python3 "$HERE/make-test-jwt.py" "$SUB" "$TTL")"
 echo "$JWT"
 
-BODY="{\"width\":${WIDTH},\"height\":${HEIGHT}}"
+BODY="{\"screenWidth\":${WIDTH},\"screenHeight\":${HEIGHT}}"
 echo
 echo "== 2. POST ${API}/session/start"
 cat <<EOF

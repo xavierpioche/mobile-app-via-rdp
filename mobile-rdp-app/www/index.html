@@ -27,6 +27,23 @@
     #hidden-keyboard-input {
       position: fixed; top: -100px; left: 0; opacity: 0; width: 1px; height: 1px;
     }
+    #token-form {
+      position: fixed; inset: 0; background: #111; color: #fff; z-index: 25;
+      display: none; flex-direction: column; justify-content: center; gap: 12px;
+      padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+    }
+    #token-form h1 { font-size: 20px; font-weight: 600; }
+    #token-form p { font-size: 14px; color: #bbb; line-height: 1.4; }
+    #token-form textarea {
+      width: 100%; height: 140px; padding: 10px; border-radius: 8px; border: 1px solid #444;
+      background: #1c1c1c; color: #fff; font: 13px ui-monospace, Menlo, monospace;
+      word-break: break-all; touch-action: auto;
+    }
+    #token-form button {
+      padding: 14px; border-radius: 8px; border: 0; background: #2f6fed; color: #fff;
+      font-size: 16px; font-weight: 600;
+    }
+    #token-form .error { color: #ff8a80; font-size: 14px; min-height: 1.2em; }
     #kbd-toggle {
       position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px;
       border-radius: 24px; background: rgba(30, 30, 30, 0.85); color: #fff;
@@ -36,6 +53,13 @@
 </head>
 <body>
   <div id="loader">Démarrage de la session sécurisée...</div>
+  <form id="token-form" autocomplete="off">
+    <h1>CloudBrowser</h1>
+    <p>Collez le JWT de test (Orchestrator/tools/make-test-jwt.py ou start-test-session.sh).</p>
+    <textarea id="token-input" placeholder="eyJhbGciOiJIUzI1NiIs..." autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+    <div class="error" id="token-error"></div>
+    <button type="submit">Démarrer la session</button>
+  </form>
   <div id="display-container"></div>
   <input id="hidden-keyboard-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" />
   <button id="kbd-toggle" aria-label="Clavier">⌨</button>
@@ -190,11 +214,36 @@
       CapApp.addListener('appStateChange', ({ isActive }) => { if (!isActive) wipeSession(); });
     }
 
-    if (!USER_TOKEN) {
-      showStatus('Aucun jeton utilisateur : ouvrez l\'app avec ?token=<JWT>', true);
-    } else {
-      startRemoteBrowser(USER_TOKEN).catch((err) => showStatus(`Échec : ${err.message}`, true));
+    // Sans ?token= (cas de l'app native, qui n'a pas de barre d'adresse) : saisie du JWT
+    const tokenForm = document.getElementById('token-form');
+    const tokenInput = document.getElementById('token-input');
+    const tokenError = document.getElementById('token-error');
+
+    function askForToken(message = '') {
+      tokenError.textContent = message;
+      loader.style.display = 'none';
+      tokenForm.style.display = 'flex';
     }
+
+    function start(token) {
+      tokenForm.style.display = 'none';
+      startRemoteBrowser(token).catch((err) => {
+        // Pas encore de session : on permet de recoller un jeton
+        if (!activeSessionId) askForToken(`Échec : ${err.message}`);
+        else showStatus(`Échec : ${err.message}`, true);
+      });
+    }
+
+    tokenForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const token = tokenInput.value.replace(/\s+/g, '').replace(/^Bearer/i, '');
+      if (!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(token)) return askForToken('Ce n\'est pas un JWT (trois parties séparées par des points).');
+      tokenInput.blur();
+      start(token);
+    });
+
+    if (USER_TOKEN) start(USER_TOKEN);
+    else askForToken();
   </script>
 </body>
 </html>
