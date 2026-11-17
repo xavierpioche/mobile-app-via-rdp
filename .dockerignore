@@ -1,0 +1,6 @@
+# Contexte de build de l'orchestrateur (racine du dépôt) : uniquement le nécessaire.
+# Les images kiosque et proxy ont leur propre contexte (Kiosque/, GuacProxy/).
+*
+!Orchestrator/package*.json
+!Orchestrator/*.js
+!mobile-rdp-app/www

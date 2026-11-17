@@ -53,7 +53,7 @@ spec:
             - name: KIOSK_IMAGE
               value: "africa-south1-docker.pkg.dev/lab-mobile-rdp-browser/rdp-browser-repo/kiosk-rdp:v4" # from-param: ${kiosk_image}
             - name: ALLOWED_ORIGINS
-              value: "capacitor://localhost,https://localhost,http://localhost,http://localhost:8100"
+              value: "capacitor://localhost,https://localhost,http://localhost,http://localhost:8100,https://xmobile.tylshiloh.me"
             # Clé partagée avec le proxy Guacamole sans état (GuacProxy/guac-proxy-deployment.yaml)
             - name: TUNNEL_SECRET
               valueFrom:
@@ -83,6 +83,15 @@ spec:
               value: "rdp-orchestrator"
             - name: MAX_TOKEN_TTL_SECONDS
               value: "3600"
+            # Code du lanceur de test (/test/) ; secret absent = lanceur désactivé.
+            #   kubectl -n guacamole-system create secret generic orchestrator-test-launch \
+            #     --from-literal=TEST_LAUNCH_CODE=<code>
+            - name: TEST_LAUNCH_CODE
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-test-launch
+                  key: TEST_LAUNCH_CODE
+                  optional: true
           readinessProbe:
             httpGet:
               path: /healthz

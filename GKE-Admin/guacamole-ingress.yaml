@@ -21,6 +21,21 @@ spec:
             name: rdp-orchestrator-service
             port:
               number: 3000
+      # Lanceur de test et client web (servis par l'orchestrateur)
+      - path: /test
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: rdp-orchestrator-service
+            port:
+              number: 3000
+      - path: /test/*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: rdp-orchestrator-service
+            port:
+              number: 3000
       # Tunnel WebSocket Guacamole via le proxy sans état (plusieurs réplicas)
       - path: /tunnel
         pathType: ImplementationSpecific

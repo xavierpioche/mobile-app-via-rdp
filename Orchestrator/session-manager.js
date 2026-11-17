@@ -3,7 +3,8 @@ const cors = require('cors');
 const k8s = require('@kubernetes/client-node');
 const crypto = require('crypto');
 const { createTunnelToken } = require('./tunnel-token');
-const { requireUser, wipeTokenFor, checkWipeToken, userLabel } = require('./auth');
+const path = require('path');
+const { requireUser, wipeTokenFor, checkWipeToken, userLabel, signJwt, safeEqual } = require('./auth');
 
 // Origines autorisées : WebView Capacitor (iOS = capacitor://localhost, Android = https://localhost)
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
@@ -24,6 +25,72 @@ app.use(express.text({ limit: '1kb' }));
 
 // Health check pour le load balancer GCE (Ingress) et la readinessProbe
 app.get('/healthz', (req, res) => res.status(200).send('ok'));
+
+// ---------------------------------------------------------------------------
+// Lanceur de test : https://xmobile.tylshiloh.me/test/
+// Sert le client web (mobile-rdp-app/www, copié dans l'image) et émet un JWT
+// court contre un code de test. Désactivé si TEST_LAUNCH_CODE n'est pas défini.
+// ---------------------------------------------------------------------------
+const TEST_LAUNCH_CODE = process.env.TEST_LAUNCH_CODE || '';
+const TEST_TOKEN_TTL = 300;
+const LOGIN_RE = /^[\w.@-]{1,64}$/;
+
+app.set('trust proxy', 1); // derrière le load balancer GCE : req.ip = IP du client
+app.use('/test', express.static(path.join(__dirname, 'public'), {
+	index: 'test.html',
+	setHeaders: (res) => res.set('Cache-Control', 'no-store'),
+}));
+
+// Anti force brute minimal (par réplica) : 5 échecs par IP et par tranche de 10 minutes
+const launchFailures = new Map();
+const FAIL_WINDOW_MS = 10 * 60 * 1000;
+const MAX_FAILURES = 5;
+function tooManyFailures(ip) {
+	const entry = launchFailures.get(ip);
+	if (!entry || Date.now() - entry.since > FAIL_WINDOW_MS) {
+		launchFailures.delete(ip);
+		return false;
+	}
+	return entry.count >= MAX_FAILURES;
+}
+function recordFailure(ip) {
+	const entry = launchFailures.get(ip);
+	if (!entry || Date.now() - entry.since > FAIL_WINDOW_MS) launchFailures.set(ip, { count: 1, since: Date.now() });
+	else entry.count += 1;
+	if (launchFailures.size > 10000) launchFailures.clear();
+}
+
+// URL que Chromium doit ouvrir : http(s) uniquement (la NetworkPolicy bloque déjà les adresses privées)
+function parseTargetUrl(raw) {
+	if (typeof raw !== 'string' || raw.length > 2048) return null;
+	try {
+		const u = new URL(raw.trim());
+		return (u.protocol === 'https:' || u.protocol === 'http:') ? u.href : null;
+	} catch {
+		return null;
+	}
+}
+
+app.post('/session/test-launch', (req, res) => {
+	if (!TEST_LAUNCH_CODE) return res.status(404).json({ error: 'lanceur de test désactivé' });
+	const ip = req.ip;
+	if (tooManyFailures(ip)) return res.status(429).json({ error: 'trop d\'essais, réessayez plus tard' });
+
+	const body = typeof req.body === 'object' && req.body ? req.body : {};
+	if (typeof body.code !== 'string' || !safeEqual(body.code, TEST_LAUNCH_CODE)) {
+		recordFailure(ip);
+		console.warn(`[test-launch] code refusé (${ip})`);
+		return res.status(403).json({ error: 'code de sécurité invalide' });
+	}
+	const login = typeof body.login === 'string' ? body.login.trim() : '';
+	if (!LOGIN_RE.test(login)) return res.status(400).json({ error: 'login invalide (lettres, chiffres, . _ - @ ; 64 max)' });
+	const url = body.url ? parseTargetUrl(body.url) : null;
+	if (body.url && !url) return res.status(400).json({ error: 'URL invalide (http ou https)' });
+
+	const token = signJwt({ sub: login, ...(url ? { app_url: url } : {}) }, TEST_TOKEN_TTL);
+	console.log(`[test-launch] jeton émis pour ${userLabel(login)}`);
+	res.json({ token, expiresIn: TEST_TOKEN_TTL });
+});
 
 const kc = new k8s.KubeConfig();
 kc.loadFromDefault();
@@ -78,8 +145,10 @@ app.post('/session/start', requireUser, async (req, res) => {
 		if (replaced) console.log(`[session] ${replaced} ancienne(s) session(s) détruite(s) pour ${userId}`);
 
 		const rdpPassword = crypto.randomBytes(16).toString('hex');
-		// Le JWT déjà vérifié est transmis à l'application web finale (connexion automatique)
-		const targetUrl = `https://tylshiloh.me/auth?token=${encodeURIComponent(req.userToken)}`;
+		// URL choisie dans le lanceur de test (claim app_url), sinon l'application web
+		// finale, à qui le JWT déjà vérifié est transmis (connexion automatique)
+		const targetUrl = parseTargetUrl(req.user.app_url)
+			|| `https://tylshiloh.me/auth?token=${encodeURIComponent(req.userToken)}`;
 		const podManifest = {
 			metadata: {
 				name: sessionId,

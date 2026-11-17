@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>CloudBrowser · lanceur de test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; background: #111; color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    form {
+      max-width: 420px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px;
+      padding: calc(32px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+    }
+    h1 { font-size: 22px; font-weight: 600; }
+    p { font-size: 14px; color: #bbb; line-height: 1.4; }
+    label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: #ddd; }
+    input {
+      padding: 12px; border-radius: 8px; border: 1px solid #444; background: #1c1c1c;
+      color: #fff; font-size: 16px; /* 16px : pas de zoom automatique sur iOS */
+    }
+    input:focus { outline: 2px solid #2f6fed; border-color: transparent; }
+    button {
+      margin-top: 6px; padding: 14px; border-radius: 8px; border: 0; background: #2f6fed;
+      color: #fff; font-size: 16px; font-weight: 600;
+    }
+    button:disabled { opacity: 0.6; }
+    #msg { min-height: 1.3em; font-size: 14px; color: #ff8a80; }
+  </style>
+</head>
+<body>
+  <form id="launch" autocomplete="off" novalidate>
+    <h1>Lanceur de test</h1>
+    <p>Ouvre une session Chromium isolée sur l'URL choisie.</p>
+
+    <label>Login (fictif)
+      <input id="login" name="login" required maxlength="64" placeholder="alice"
+             autocapitalize="off" autocorrect="off" spellcheck="false" />
+    </label>
+    <label>URL à ouvrir dans Chromium
+      <input id="url" name="url" type="url" inputmode="url" maxlength="2048"
+             placeholder="https://tylshiloh.me/auth (par défaut)"
+             autocapitalize="off" autocorrect="off" spellcheck="false" />
+    </label>
+    <label>Code de sécurité
+      <input id="code" name="code" type="password" inputmode="numeric" required maxlength="32" />
+    </label>
+
+    <div id="msg" role="alert"></div>
+    <button type="submit">Lancer</button>
+  </form>
+
+  <script>
+    const ORCHESTRATOR_API = 'https://xmobile.tylshiloh.me';
+    const form = document.getElementById('launch');
+    const msg = document.getElementById('msg');
+    const button = form.querySelector('button');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      let url = form.url.value.trim();
+      // « example.com » → « https://example.com »
+      if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+
+      button.disabled = true;
+      button.textContent = 'Vérification...';
+      try {
+        const res = await fetch(`${ORCHESTRATOR_API}/session/test-launch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ login: form.login.value.trim(), url, code: form.code.value }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+        // Même enchaînement que start-test-session.sh : JWT → /session/start → tunnel.
+        // L'app lit le jeton une seule fois puis l'efface.
+        sessionStorage.setItem('cloudbrowser.jwt', data.token);
+        location.href = 'index.html';
+      } catch (err) {
+        msg.textContent = err.message;
+        form.code.value = '';
+        button.disabled = false;
+        button.textContent = 'Lancer';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -26,7 +26,7 @@ steps:
   - id: orchestrator
     name: gcr.io/cloud-builders/docker
     waitFor: ['-']
-    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/rdp-orchestrator:${BUILD_ID}', 'Orchestrator']
+    args: ['build', '-f', 'Orchestrator/Dockerfile', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/rdp-orchestrator:${BUILD_ID}', '.']
   - id: proxy
     name: gcr.io/cloud-builders/docker
     waitFor: ['-']

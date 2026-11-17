@@ -42,7 +42,7 @@ spec:
             - name: GUACD_PORT
               value: "4822"
             - name: ALLOWED_ORIGINS
-              value: "capacitor://localhost,https://localhost,http://localhost,http://localhost:8100"
+              value: "capacitor://localhost,https://localhost,http://localhost,http://localhost:8100,https://xmobile.tylshiloh.me"
             - name: TUNNEL_SECRET
               valueFrom:
                 secretKeyRef:

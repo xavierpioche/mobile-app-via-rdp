@@ -92,4 +92,20 @@ function userLabel(sub) {
 	return crypto.createHash('sha256').update(String(sub)).digest('hex').slice(0, 32);
 }
 
-module.exports = { requireUser, wipeTokenFor, checkWipeToken, userLabel };
+// Émet un JWT HS256 (utilisé uniquement par le lanceur de test /session/test-launch)
+function signJwt(claims, ttlSeconds) {
+	const now = Math.floor(Date.now() / 1000);
+	const header = b64urlEncode(Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
+	const payload = b64urlEncode(Buffer.from(JSON.stringify({
+		...claims,
+		aud: JWT_AUDIENCE,
+		...(JWT_ISSUER ? { iss: JWT_ISSUER } : {}),
+		iat: now,
+		exp: now + ttlSeconds,
+		jti: crypto.randomBytes(8).toString('hex'),
+	})));
+	const sig = b64urlEncode(crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest());
+	return `${header}.${payload}.${sig}`;
+}
+
+module.exports = { requireUser, wipeTokenFor, checkWipeToken, userLabel, signJwt, safeEqual };

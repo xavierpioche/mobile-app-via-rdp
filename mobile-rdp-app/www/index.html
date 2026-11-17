@@ -72,7 +72,10 @@
 
     // JWT utilisateur (HS256, aud "rdp-orchestrator") : ?token=... dans l'URL pour les tests.
     // En production, le récupérer auprès de votre backend d'identité après connexion.
-    const USER_TOKEN = new URLSearchParams(location.search).get('token');
+    // Le lanceur de test (test.html) le transmet par sessionStorage, lu une seule fois.
+    const USER_TOKEN = new URLSearchParams(location.search).get('token')
+      || sessionStorage.getItem('cloudbrowser.jwt');
+    sessionStorage.removeItem('cloudbrowser.jwt');
 
     let guacClient = null;
     let activeSessionId = null;

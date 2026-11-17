@@ -65,7 +65,7 @@ valeurs par défaut. Cloud Deploy remplace les champs marqués
 
 | Paramètre | Fichier | Valeur fournie par Cloud Build |
 |---|---|---|
-| `orchestrator_image` | `Orchestrator/orchestrator-deployment.yaml` | `rdp-orchestrator:<BUILD_ID>` |
+| `orchestrator_image` | `Orchestrator/orchestrator-deployment.yaml` | `rdp-orchestrator:<BUILD_ID>` (contexte de build : racine du dépôt) |
 | `kiosk_image` | `Orchestrator/orchestrator-deployment.yaml` (`KIOSK_IMAGE`) | `kiosk-rdp:<BUILD_ID>` |
 | `proxy_image` | `GuacProxy/guac-proxy-deployment.yaml` | `guac-proxy:<BUILD_ID>` |
 | `kube_dns_cidr` | `Guacamole/rdp-network-policy.yaml` | IP du service `kube-dns` du cluster `/32` |
@@ -89,6 +89,21 @@ python3 Orchestrator/tools/make-test-jwt.py alice 300
 ```
 
 Puis ouvrir l'app avec `?token=<JWT>` : la page `/auth` doit afficher `alice`.
+
+### Lanceur de test (`https://xmobile.tylshiloh.me/test/`)
+
+Formulaire (login fictif, URL à ouvrir dans Chromium, code de sécurité) servi par
+l'orchestrateur avec le client web `mobile-rdp-app/www`. Il est désactivé tant que
+le secret du code n'existe pas :
+
+```bash
+kubectl -n guacamole-system create secret generic orchestrator-test-launch \
+  --from-literal=TEST_LAUNCH_CODE=<code>
+kubectl -n guacamole-system rollout restart deployment rdp-orchestrator
+```
+
+(ou `TEST_LAUNCH_CODE=<code> deploy/bootstrap.sh`). Le code ne protège qu'un
+environnement de test : 5 essais ratés par IP et par 10 minutes, JWT de 5 minutes.
 
 ## Hors pipeline
 

@@ -68,6 +68,12 @@ kubectl -n guacamole-system get secret orchestrator-auth >/dev/null 2>&1 ||
 kubectl -n guacamole-system get secret guac-tunnel-secret >/dev/null 2>&1 ||
   kubectl -n guacamole-system create secret generic guac-tunnel-secret \
     --from-literal=TUNNEL_SECRET="$(openssl rand -hex 32)"
+# Lanceur de test /test/ : seulement si TEST_LAUNCH_CODE est fourni (sinon désactivé)
+if [ -n "${TEST_LAUNCH_CODE:-}" ]; then
+  kubectl -n guacamole-system get secret orchestrator-test-launch >/dev/null 2>&1 ||
+    kubectl -n guacamole-system create secret generic orchestrator-test-launch \
+      --from-literal=TEST_LAUNCH_CODE="$TEST_LAUNCH_CODE"
+fi
 
 log "7. Compte de service du pipeline ${PIPELINE_SA}"
 exists gcloud iam service-accounts describe "$PIPELINE_SA" ||
